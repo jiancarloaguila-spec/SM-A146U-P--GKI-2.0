@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       ksu_branch:
-        description: 'SukiSU-Ultra branch or tag (main = latest release)'
+        description: 'SukiSU-Ultra branch (main = latest)'
         required: true
         default: 'main'
       enable_kpm:
         description: 'Enable KPM (Kernel Patch Module) support'
         type: boolean
-        default: true
+        default: false
       localversion:
         description: 'Custom kernel version suffix'
         required: false
@@ -35,24 +35,24 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install Build Dependencies
+      - name: Install Build Dependencies & Clang 18
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git \
             libelf-dev libncurses5-dev libssl-dev libxml2-utils lz4 python3 \
-            python-is-python3 rsync unzip wget zip cpio device-tree-compiler dwarves
+            python-is-python3 rsync unzip wget zip cpio device-tree-compiler \
+            dwarves clang-18 lld-18 llvm-18
 
-      - name: Download Clang Toolchain
-        run: |
-          mkdir -p toolchain/clang
-          wget -q "https://github.com" -O clang.tar.gz
-          tar -xzf clang.tar.gz -C toolchain/clang
-          rm clang.tar.gz
+          # Link clang-18 as default clang/llvm
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+            sudo ln -sf /usr/bin/${tool}-18 /usr/bin/${tool}
+          done
 
       - name: Setup SukiSU-Ultra in kernel-6.6
         working-directory: kernel-6.6
         run: |
-          curl -LSs "https://githubusercontent.com" | bash -s ${{ github.event.inputs.ksu_branch }}
+          git clone --depth=1 -b ${{ github.event.inputs.ksu_branch }} https://github.com KernelSU
+          bash KernelSU/kernel/setup.sh
 
       - name: Configure gki_defconfig for SukiSU-Ultra & Samsung GKI
         working-directory: kernel-6.6
@@ -84,7 +84,6 @@ jobs:
       - name: Compile Kernel 6.6 GKI Image
         working-directory: kernel-6.6
         run: |
-          export PATH="${{ github.workspace }}/toolchain/clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export LLVM=1
@@ -93,34 +92,23 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 Image Image.gz
 
-      - name: Patch Image with KPM & Repack boot.img
+      - name: Repack boot.img with Stock Release
         run: |
           mkdir -p release stock
           cp kernel-6.6/out/arch/arm64/boot/Image release/
           cp kernel-6.6/out/arch/arm64/boot/Image.gz release/
 
-          # Download stock boot.img from your GitHub Release (Tag: Stock-boot.img, Asset: boot.img)
-          wget -q "https://github.com" -O stock/boot.img
+          # Download stock boot.img from your GitHub Release via GitHub CLI
+          gh release download "Stock-boot.img" -p "boot.img" -D stock/
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-          # Apply KPM patch_linux tool if KPM is enabled
-          if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
-            cd release
-            wget -q "https://github.com" || true
-            if [ -f patch_linux ]; then
-              chmod +x patch_linux
-              ./patch_linux
-              if [ -f oImage ]; then
-                mv oImage Image
-              fi
-            fi
-            cd ..
-          fi
-
-          # Repack stock/boot.img using magiskboot
+      - name: Pack boot.img.zip and Odin .tar
+        run: |
           if [ -s stock/boot.img ]; then
             mkdir -p repack && cd repack
-            wget -q "https://github.com" -O magisk.zip
-            unzip -q magisk.zip lib/x86_64/libmagiskboot.so
+            gh release download v28.1 -R topjohnwu/Magisk -p "Magisk-v28.1.apk"
+            unzip -q Magisk-v28.1.apk lib/x86_64/libmagiskboot.so
             mv lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
 
             cp ../stock/boot.img .
@@ -132,6 +120,8 @@ jobs:
             zip -r boot.img.zip boot.img
             tar -cvf SM-A146U-P-SukiSU-Ultra-Odin.tar boot.img
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
