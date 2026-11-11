@@ -45,7 +45,7 @@ jobs:
       - name: Download AOSP Clang Toolchain (r510928 for Kernel 6.6)
         run: |
           mkdir -p toolchain/clang
-          wget -q https://googlesource.com -O clang.tar.gz
+          wget -q "https://googlesource.com" -O clang.tar.gz
           tar -xzf clang.tar.gz -C toolchain/clang
           rm clang.tar.gz
 
@@ -59,7 +59,6 @@ jobs:
         run: |
           DEFCONFIG="arch/arm64/configs/gki_defconfig"
           
-          # Core SukiSU-Ultra & Kprobes flags
           cat <<EOF >> "$DEFCONFIG"
           CONFIG_KSU=y
           CONFIG_KSU_SUSFS=y
@@ -72,7 +71,6 @@ jobs:
           CONFIG_LOCALVERSION="${{ github.event.inputs.localversion }}"
           EOF
 
-          # Optional KPM support
           if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
             cat <<EOF >> "$DEFCONFIG"
           CONFIG_KPM=y
@@ -81,7 +79,6 @@ jobs:
           EOF
           fi
 
-          # Disable strict GKI symbol CRC abort if needed
           sed -i 's/CONFIG_TRIM_UNUSED_KSYMS=y/# CONFIG_TRIM_UNUSED_KSYMS is not set/g' "$DEFCONFIG"
 
       - name: Compile Kernel 6.6 GKI Image
@@ -96,16 +93,19 @@ jobs:
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 Image Image.gz
 
-      - name: Patch Image with KPM & Repack boot.img (if stock/boot.img exists)
+      - name: Patch Image with KPM & Repack boot.img
         run: |
-          mkdir -p release
+          mkdir -p release stock
           cp kernel-6.6/out/arch/arm64/boot/Image release/
           cp kernel-6.6/out/arch/arm64/boot/Image.gz release/
+
+          # Download stock boot.img from your GitHub Release (Tag: Stock-boot.img, Asset: boot.img)
+          wget -q "https://github.com" -O stock/boot.img
 
           # Apply KPM patch_linux tool if KPM is enabled
           if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
             cd release
-            wget -q https://github.com || true
+            wget -q "https://github.com" || true
             if [ -f patch_linux ]; then
               chmod +x patch_linux
               ./patch_linux
@@ -116,10 +116,10 @@ jobs:
             cd ..
           fi
 
-          # Repack stock/boot.img using magiskboot if provided
-          if [ -f stock/boot.img ]; then
+          # Repack stock/boot.img using magiskboot
+          if [ -s stock/boot.img ]; then
             mkdir -p repack && cd repack
-            wget -q https://github.com -O magisk.zip
+            wget -q "https://github.com" -O magisk.zip
             unzip -q magisk.zip lib/x86_64/libmagiskboot.so
             mv lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
 
@@ -130,6 +130,7 @@ jobs:
             cp new-boot.img ../release/boot.img
             cd ../release
             zip -r boot.img.zip boot.img
+            tar -cvf SM-A146U-P-SukiSU-Ultra-Odin.tar boot.img
           fi
 
       - name: Upload Build Artifacts
