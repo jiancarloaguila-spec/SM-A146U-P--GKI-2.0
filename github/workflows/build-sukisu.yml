@@ -1,23 +1,27 @@
-name: Build SM-A146U/P Kernel with SukiSU-Ultra
+name: Build SM-A146U/P SukiSU-Ultra Kernel
 
 on:
   workflow_dispatch:
     inputs:
       ksu_branch:
-        description: 'SukiSU-Ultra branch or tag (e.g., main, builtin, or a release tag)'
+        description: 'SukiSU-Ultra branch or tag (main = latest release)'
         required: true
         default: 'main'
       enable_kpm:
         description: 'Enable KPM (Kernel Patch Module) support'
         type: boolean
         default: true
+      localversion:
+        description: 'Custom kernel version suffix'
+        required: false
+        default: '-SukiSU-Ultra'
 
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Maximize Build Space
+      - name: Maximize Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
@@ -26,7 +30,7 @@ jobs:
           haskell: true
           large-packages: true
 
-      - name: Checkout Repository
+      - name: Checkout Source Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -35,42 +39,101 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex git \
-            gnupg gperf imagemagick libelf-dev libncurses5-dev libssl-dev \
-            libxml2 libxml2-utils lz4 lzop pngcrush rsync schedtool squashfs-tools \
-            xsltproc zip zlib1g-dev python3 python-is-python3 cpio device-tree-compiler
+            libelf-dev libncurses5-dev libssl-dev libxml2-utils lz4 python3 \
+            python-is-python3 rsync unzip wget zip cpio device-tree-compiler dwarves
 
-      - name: Integrate SukiSU-Ultra into kernel-6.6
+      - name: Download AOSP Clang Toolchain (r510928 for Kernel 6.6)
+        run: |
+          mkdir -p toolchain/clang
+          wget -q https://googlesource.com -O clang.tar.gz
+          tar -xzf clang.tar.gz -C toolchain/clang
+          rm clang.tar.gz
+
+      - name: Setup SukiSU-Ultra in kernel-6.6
         working-directory: kernel-6.6
         run: |
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s ${{ github.event.inputs.ksu_branch }}
+          curl -LSs "https://githubusercontent.com" | bash -s ${{ github.event.inputs.ksu_branch }}
 
-      - name: Configure Kernel Options for SukiSU & KPM
+      - name: Configure gki_defconfig for SukiSU-Ultra & Samsung GKI
         working-directory: kernel-6.6
         run: |
-          # Ensure Kprobes & KSU configs are enabled in GKI/defconfig
-          DEFCONFIG=$(find arch/arm64/configs -name "*defconfig" | head -n 1)
-          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
-          echo "CONFIG_KPROBES=y" >> "$DEFCONFIG"
-          echo "CONFIG_HAVE_KPROBES=y" >> "$DEFCONFIG"
-          echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG"
+          DEFCONFIG="arch/arm64/configs/gki_defconfig"
           
+          # Core SukiSU-Ultra & Kprobes flags
+          cat <<EOF >> "$DEFCONFIG"
+          CONFIG_KSU=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KPROBES=y
+          CONFIG_HAVE_KPROBES=y
+          CONFIG_KPROBE_EVENTS=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_TMPFS_XATTR=y
+          CONFIG_TMPFS_POSIX_ACL=y
+          CONFIG_LOCALVERSION="${{ github.event.inputs.localversion }}"
+          EOF
+
+          # Optional KPM support
           if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
-            echo "CONFIG_KPM=y" >> "$DEFCONFIG"
-            echo "CONFIG_KALLSYMS=y" >> "$DEFCONFIG"
-            echo "CONFIG_KALLSYMS_ALL=y" >> "$DEFCONFIG"
+            cat <<EOF >> "$DEFCONFIG"
+          CONFIG_KPM=y
+          CONFIG_KALLSYMS=y
+          CONFIG_KALLSYMS_ALL=y
+          EOF
           fi
 
-      - name: Run Repository Build Script
-        run: |
-          chmod +x build_kernel.sh
-          ./build_kernel.sh
+          # Disable strict GKI symbol CRC abort if needed
+          sed -i 's/CONFIG_TRIM_UNUSED_KSYMS=y/# CONFIG_TRIM_UNUSED_KSYMS is not set/g' "$DEFCONFIG"
 
-      - name: Package & Upload Compiled Artifacts
+      - name: Compile Kernel 6.6 GKI Image
+        working-directory: kernel-6.6
+        run: |
+          export PATH="${{ github.workspace }}/toolchain/clang/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
+          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 Image Image.gz
+
+      - name: Patch Image with KPM & Repack boot.img (if stock/boot.img exists)
+        run: |
+          mkdir -p release
+          cp kernel-6.6/out/arch/arm64/boot/Image release/
+          cp kernel-6.6/out/arch/arm64/boot/Image.gz release/
+
+          # Apply KPM patch_linux tool if KPM is enabled
+          if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
+            cd release
+            wget -q https://github.com || true
+            if [ -f patch_linux ]; then
+              chmod +x patch_linux
+              ./patch_linux
+              if [ -f oImage ]; then
+                mv oImage Image
+              fi
+            fi
+            cd ..
+          fi
+
+          # Repack stock/boot.img using magiskboot if provided
+          if [ -f stock/boot.img ]; then
+            mkdir -p repack && cd repack
+            wget -q https://github.com -O magisk.zip
+            unzip -q magisk.zip lib/x86_64/libmagiskboot.so
+            mv lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
+
+            cp ../stock/boot.img .
+            ./magiskboot unpack boot.img
+            cp ../release/Image kernel
+            ./magiskboot repack boot.img new-boot.img
+            cp new-boot.img ../release/boot.img
+            cd ../release
+            zip -r boot.img.zip boot.img
+          fi
+
+      - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SM-A146U-P-SukiSU-Ultra-Kernel
-          path: |
-            **/arch/arm64/boot/Image*
-            **/boot.img
-            out/**/*.img
-          if-no-files-found: warn
+          name: SM-A146U-P-SukiSU-Ultra-${{ github.run_number }}
+          path: release/*
