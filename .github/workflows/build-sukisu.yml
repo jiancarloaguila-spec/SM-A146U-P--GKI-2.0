@@ -21,14 +21,9 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Maximize Free Disk Space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
+      - name: Quick Disk Cleanup (2 Seconds)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
 
       - name: Checkout Source Repository
         uses: actions/checkout@v4
@@ -43,7 +38,6 @@ jobs:
             python-is-python3 rsync unzip wget zip cpio device-tree-compiler \
             dwarves clang-18 lld-18 llvm-18
 
-          # Link clang-18 as default clang/llvm
           for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
             sudo ln -sf /usr/bin/${tool}-18 /usr/bin/${tool}
           done
@@ -98,7 +92,6 @@ jobs:
           cp kernel-6.6/out/arch/arm64/boot/Image release/
           cp kernel-6.6/out/arch/arm64/boot/Image.gz release/
 
-          # Download stock boot.img from your GitHub Release via GitHub CLI
           gh release download "Stock-boot.img" -p "boot.img" -D stock/
         env:
           GH_TOKEN: ${{ github.token }}
