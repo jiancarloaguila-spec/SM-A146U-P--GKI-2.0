@@ -42,10 +42,10 @@ jobs:
             libelf-dev libncurses5-dev libssl-dev libxml2-utils lz4 python3 \
             python-is-python3 rsync unzip wget zip cpio device-tree-compiler dwarves
 
-      - name: Download AOSP Clang Toolchain (r510928 for Kernel 6.6)
+      - name: Download Clang Toolchain
         run: |
           mkdir -p toolchain/clang
-          wget -q "https://googlesource.com" -O clang.tar.gz
+          wget -q "https://github.com" -O clang.tar.gz
           tar -xzf clang.tar.gz -C toolchain/clang
           rm clang.tar.gz
 
