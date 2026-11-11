@@ -1,0 +1,76 @@
+name: Build SM-A146U/P Kernel with SukiSU-Ultra
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_branch:
+        description: 'SukiSU-Ultra branch or tag (e.g., main, builtin, or a release tag)'
+        required: true
+        default: 'main'
+      enable_kpm:
+        description: 'Enable KPM (Kernel Patch Module) support'
+        type: boolean
+        default: true
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex git \
+            gnupg gperf imagemagick libelf-dev libncurses5-dev libssl-dev \
+            libxml2 libxml2-utils lz4 lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev python3 python-is-python3 cpio device-tree-compiler
+
+      - name: Integrate SukiSU-Ultra into kernel-6.6
+        working-directory: kernel-6.6
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s ${{ github.event.inputs.ksu_branch }}
+
+      - name: Configure Kernel Options for SukiSU & KPM
+        working-directory: kernel-6.6
+        run: |
+          # Ensure Kprobes & KSU configs are enabled in GKI/defconfig
+          DEFCONFIG=$(find arch/arm64/configs -name "*defconfig" | head -n 1)
+          echo "CONFIG_KSU=y" >> "$DEFCONFIG"
+          echo "CONFIG_KPROBES=y" >> "$DEFCONFIG"
+          echo "CONFIG_HAVE_KPROBES=y" >> "$DEFCONFIG"
+          echo "CONFIG_KPROBE_EVENTS=y" >> "$DEFCONFIG"
+          
+          if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
+            echo "CONFIG_KPM=y" >> "$DEFCONFIG"
+            echo "CONFIG_KALLSYMS=y" >> "$DEFCONFIG"
+            echo "CONFIG_KALLSYMS_ALL=y" >> "$DEFCONFIG"
+          fi
+
+      - name: Run Repository Build Script
+        run: |
+          chmod +x build_kernel.sh
+          ./build_kernel.sh
+
+      - name: Package & Upload Compiled Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SM-A146U-P-SukiSU-Ultra-Kernel
+          path: |
+            **/arch/arm64/boot/Image*
+            **/boot.img
+            out/**/*.img
+          if-no-files-found: warn
