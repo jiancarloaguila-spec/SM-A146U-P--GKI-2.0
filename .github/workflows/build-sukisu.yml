@@ -11,169 +11,184 @@ on:
         options:
           - main
 
+      enable_kpm:
+        description: "Disable KPM support"
+        required: true
+        type: boolean
+        default: false
+
       localversion:
         description: "Kernel version suffix"
         required: true
         default: "-SukiSU-Ultra"
-        type: string
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build SukiSU-Ultra Kernel
+    name: Build Kernel
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
     steps:
-      # 1. Free runner storage
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
 
-      # 2. Download repository
       - name: Checkout Source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: recursive
 
-      # 3. Install compiler and dependencies
-      - name: Install Build Dependencies
+      - name: Install Dependencies and Clang 18
         run: |
           set -e
+
           sudo apt-get update
+
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex git \
-            libelf-dev libncurses-dev libssl-dev \
-            libxml2-utils lz4 python3 python-is-python3 \
-            rsync unzip wget zip cpio \
-            device-tree-compiler dwarves \
+            libelf-dev libncurses-dev libssl-dev libxml2-utils \
+            lz4 python3 python-is-python3 rsync unzip wget zip \
+            cpio device-tree-compiler dwarves \
             clang-18 lld-18 llvm-18
 
-          echo "Checking compiler..."
           clang-18 --version
           ld.lld-18 --version
           llvm-ar-18 --version
 
-      # 4. Verify and locate kernel source paths
       - name: Verify Kernel Source
         run: |
           set -e
-          echo "Repository root:"
+
+          echo "Checking repository structure..."
+          echo "Current directory:"
           pwd
+
+          echo "Repository files:"
           ls -lah
 
-          echo "Checking build script..."
-          test -f build_kernel.sh
-          cat build_kernel.sh
+          echo "Checking kernel directories..."
 
-          echo "Locating drivers directory..."
-          DRIVERS_PATH=$(find . -maxdepth 3 -type d -name "drivers" | head -n 1)
-          if [ -z "$DRIVERS_PATH" ]; then
-            echo "ERROR: Could not find drivers directory."
+          for dir in kernel kernel-6.6; do
+            if [ -d "$dir" ]; then
+              echo "FOUND: $dir"
+              ls -lah "$dir" | head -20
+            else
+              echo "NOT FOUND: $dir"
+            fi
+          done
+
+          echo "Checking build script..."
+
+          if [ -f build_kernel.sh ]; then
+            echo "FOUND: build_kernel.sh"
+          else
+            echo "ERROR: build_kernel.sh is missing from repository root."
             exit 1
           fi
-          KERNEL_DIR=$(dirname "$DRIVERS_PATH")
-          echo "Found kernel source root at: $KERNEL_DIR"
 
-          echo "Locating configuration files..."
-          find . -maxdepth 4 \( -name "*.config" -o -name "*defconfig" \)
+          # Verify required source paths exist
+          test -f build_kernel.sh
+          test -d kernel
+          test -d kernel-6.6
 
-      # 5. Integrate SukiSU-Ultra
+          echo "Source verification completed."
+
       - name: Integrate SukiSU-Ultra
+        working-directory: kernel
         env:
           KSU_BRANCH: ${{ inputs.ksu_branch }}
         run: |
           set -e
-          DRIVERS_PATH=$(find . -maxdepth 3 -type d -name "drivers" | head -n 1)
-          KERNEL_DIR=$(dirname "$DRIVERS_PATH")
 
-          echo "Running SukiSU-Ultra setup inside $KERNEL_DIR..."
-          cd "$KERNEL_DIR"
-
-          curl -fLSs \
-            https://githubusercontent.com \
+          curl -LSs \
+            https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh \
             -o /tmp/ksu-setup.sh
 
           bash /tmp/ksu-setup.sh "$KSU_BRANCH"
-          echo "SukiSU-Ultra integration completed."
 
-      # 6. Configure SukiSU-Ultra
-      - name: Configure Kernel
+      - name: Configure SukiSU-Ultra
         env:
+          ENABLE_KPM: ${{ inputs.enable_kpm }}
           LOCALVERSION: ${{ inputs.localversion }}
         run: |
           set -e
-          CONFIG=$(find . -maxdepth 4 -name "S96901AA1.config" | head -n 1)
 
-          if [ -z "$CONFIG" ]; then
-            echo "ERROR: S96901AA1.config not found anywhere in the repo."
-            find . -maxdepth 4 \( -name "*.config" -o -name "*defconfig" \)
+          OVERLAY="$(find . -type f \
+            -name 'S96901AA1.config' -print -quit)"
+
+          if [ -z "$OVERLAY" ]; then
+            echo "ERROR: S96901AA1.config not found."
             exit 1
           fi
 
-          echo "Updating $CONFIG"
+          echo "Editing configuration: $OVERLAY"
 
           sed -i -E \
-            '/^(CONFIG_KSU|CONFIG_KPROBES|CONFIG_KRETPROBES|CONFIG_LOCALVERSION)=/d' \
-            "$CONFIG"
+            '/^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KPROBES|CONFIG_KRETPROBES|CONFIG_EXT4_FS|CONFIG_KPM|CONFIG_KALLSYMS|CONFIG_KALLSYMS_ALL)=/d' \
+            "$OVERLAY"
 
-          cat >> "$CONFIG" <<EOF
+          cat >> "$OVERLAY" <<EOF
 
-# SukiSU-Ultra
-CONFIG_KSU=y
-CONFIG_KPROBES=y
-CONFIG_KRETPROBES=y
-CONFIG_LOCALVERSION="${LOCALVERSION}"
-EOF
+          # SukiSU-Ultra configuration
+          CONFIG_KSU=y
+          CONFIG_KPROBES=y
+          CONFIG_KRETPROBES=y
+          CONFIG_EXT4_FS=y
+          CONFIG_LOCALVERSION="${LOCALVERSION}"
+          EOF
 
-          echo "Final configuration:"
-          cat "$CONFIG"
+          if [ "$ENABLE_KPM" = "true" ]; then
+            cat >> "$OVERLAY" <<EOF
+          CONFIG_KPM=y
+          CONFIG_KALLSYMS=y
+          CONFIG_KALLSYMS_ALL=y
+          EOF
+          else
+            echo "# CONFIG_KPM is not set" >> "$OVERLAY"
+          fi
 
-      # 7. Compile MediaTek kernel
+          echo "SukiSU-Ultra configuration completed."
+          cat "$OVERLAY"
+
       - name: Build Kernel
         run: |
           set -e
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH="/usr/lib/llvm-18/bin:$PATH"
 
           chmod +x build_kernel.sh
+
           bash build_kernel.sh
 
-      # 8. Check compiled output
       - name: Verify Build Output
         run: |
           set -e
+
           DIST="out/target/product/a14xm/obj/KLEAF_OBJ/dist"
 
           if [ ! -d "$DIST" ]; then
-            echo "ERROR: Build output directory missing."
-            echo "Searching for generated kernel files..."
-            find out -type f 2>/dev/null | head -100 || true
+            echo "ERROR: Kernel output directory not found."
             exit 1
           fi
 
-          echo "Generated files:"
+          echo "Build output:"
           ls -lah "$DIST"
 
           if ! find "$DIST" -type f | grep -q .; then
-            echo "ERROR: No build artifacts found."
+            echo "ERROR: No kernel artifacts found."
             exit 1
           fi
 
-          echo "Build output verified."
-
-      # 9. Upload artifacts
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SM-A146U-P-SukiSU-Ultra-${{ github.run_number }}
-          path: out/target/product/a14xm/obj/KLEAF_OBJ/dist/**
+          path: |
+            out/target/product/a14xm/obj/KLEAF_OBJ/dist/**
           if-no-files-found: error
           compression-level: 6
           retention-days: 14
