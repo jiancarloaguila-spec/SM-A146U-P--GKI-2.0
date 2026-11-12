@@ -62,8 +62,40 @@ jobs:
           ld.lld-18 --version
           llvm-ar-18 --version
 
+      
       - name: Verify Kernel Source
         run: |
+          set -e
+
+          echo "Checking repository structure..."
+          echo "Current directory:"
+          pwd
+
+          echo "Repository files:"
+          ls -lah
+
+          echo "Checking kernel directories..."
+
+          for dir in kernel kernel-6.6; do
+            if [ -d "$dir" ]; then
+              echo "FOUND: $dir"
+              ls -lah "$dir" | head -20
+            else
+              echo "NOT FOUND: $dir"
+            fi
+          done
+
+          echo "Checking build script..."
+
+          if [ -f build_kernel.sh ]; then
+            echo "FOUND: build_kernel.sh"
+          else
+            echo "ERROR: build_kernel.sh is missing from repository root."
+            exit 1
+          fi
+
+          echo "Source verification completed."
+          run: |
           set -e
 
           test -f build_kernel.sh
