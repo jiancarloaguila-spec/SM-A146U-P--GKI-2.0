@@ -1,4 +1,3 @@
-
 name: Build SM-A146U/P SukiSU-Ultra Kernel
 
 on:
@@ -46,9 +45,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           set -e
-
           sudo apt-get update
-
           sudo apt-get install -y \
             bc bison build-essential ccache curl flex git \
             libelf-dev libncurses-dev libssl-dev \
@@ -58,74 +55,66 @@ jobs:
             clang-18 lld-18 llvm-18
 
           echo "Checking compiler..."
-
           clang-18 --version
           ld.lld-18 --version
           llvm-ar-18 --version
 
-      # 4. Check actual source structure
+      # 4. Verify and locate kernel source paths
       - name: Verify Kernel Source
         run: |
           set -e
-
           echo "Repository root:"
           pwd
           ls -lah
 
           echo "Checking build script..."
-
           test -f build_kernel.sh
+          cat build_kernel.sh
 
-          echo "Checking kernel directory..."
-
-          test -d kernel
-
-          echo "Checking MediaTek kernel modules..."
-
-          if [ ! -d kernel/kernel_device_modules-6.6 ]; then
-            echo "ERROR: Expected module directory is missing."
-            echo "Contents of kernel:"
-            ls -lah kernel/
+          echo "Locating drivers directory..."
+          DRIVERS_PATH=$(find . -maxdepth 3 -type d -name "drivers" | head -n 1)
+          if [ -z "$DRIVERS_PATH" ]; then
+            echo "ERROR: Could not find drivers directory."
             exit 1
           fi
+          KERNEL_DIR=$(dirname "$DRIVERS_PATH")
+          echo "Found kernel source root at: $KERNEL_DIR"
 
-          echo "Checking module build script..."
-
-          test -f kernel/kernel_device_modules-6.6/build.sh
-
-          echo "Checking kernel configuration..."
-
-          test -f kernel/mediatek-bazel_defconfig
-          test -f kernel/mt6833_overlay.config
-          test -f kernel/S96901AA1.config
-
-          echo "All required source files found!"
+          echo "Locating configuration files..."
+          find . -maxdepth 4 \( -name "*.config" -o -name "*defconfig" \)
 
       # 5. Integrate SukiSU-Ultra
       - name: Integrate SukiSU-Ultra
-        working-directory: kernel
         env:
           KSU_BRANCH: ${{ inputs.ksu_branch }}
         run: |
           set -e
+          DRIVERS_PATH=$(find . -maxdepth 3 -type d -name "drivers" | head -n 1)
+          KERNEL_DIR=$(dirname "$DRIVERS_PATH")
+
+          echo "Running SukiSU-Ultra setup inside $KERNEL_DIR..."
+          cd "$KERNEL_DIR"
 
           curl -fLSs \
-            https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh \
+            https://githubusercontent.com \
             -o /tmp/ksu-setup.sh
 
           bash /tmp/ksu-setup.sh "$KSU_BRANCH"
-
           echo "SukiSU-Ultra integration completed."
 
       # 6. Configure SukiSU-Ultra
       - name: Configure Kernel
-        working-directory: kernel
         env:
           LOCALVERSION: ${{ inputs.localversion }}
         run: |
           set -e
+          CONFIG=$(find . -maxdepth 4 -name "S96901AA1.config" | head -n 1)
 
-          CONFIG="S96901AA1.config"
+          if [ -z "$CONFIG" ]; then
+            echo "ERROR: S96901AA1.config not found anywhere in the repo."
+            find . -maxdepth 4 \( -name "*.config" -o -name "*defconfig" \)
+            exit 1
+          fi
 
           echo "Updating $CONFIG"
 
@@ -135,12 +124,12 @@ jobs:
 
           cat >> "$CONFIG" <<EOF
 
-          # SukiSU-Ultra
-          CONFIG_KSU=y
-          CONFIG_KPROBES=y
-          CONFIG_KRETPROBES=y
-          CONFIG_LOCALVERSION="${LOCALVERSION}"
-          EOF
+# SukiSU-Ultra
+CONFIG_KSU=y
+CONFIG_KPROBES=y
+CONFIG_KRETPROBES=y
+CONFIG_LOCALVERSION="${LOCALVERSION}"
+EOF
 
           echo "Final configuration:"
           cat "$CONFIG"
@@ -149,21 +138,17 @@ jobs:
       - name: Build Kernel
         run: |
           set -e
-
           export ARCH=arm64
           export SUBARCH=arm64
-
           export PATH="/usr/lib/llvm-18/bin:$PATH"
 
           chmod +x build_kernel.sh
-
           bash build_kernel.sh
 
       # 8. Check compiled output
       - name: Verify Build Output
         run: |
           set -e
-
           DIST="out/target/product/a14xm/obj/KLEAF_OBJ/dist"
 
           if [ ! -d "$DIST" ]; then
