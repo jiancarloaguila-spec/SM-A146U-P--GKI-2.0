@@ -13,7 +13,7 @@ on:
           - main
 
       enable_kpm:
-        description: "Enable KPM support"
+        description: "Disable KPM support"
         required: true
         type: boolean
         default: false
