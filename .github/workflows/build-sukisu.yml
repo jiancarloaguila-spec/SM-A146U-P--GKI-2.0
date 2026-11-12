@@ -1,123 +1,167 @@
+
 name: Build SM-A146U/P SukiSU-Ultra Kernel
 
 on:
   workflow_dispatch:
     inputs:
       ksu_branch:
-        description: 'SukiSU-Ultra branch (main = latest)'
+        description: "SukiSU-Ultra branch"
         required: true
-        default: 'main'
+        default: "main"
+        type: choice
+        options:
+          - main
+
       enable_kpm:
-        description: 'Enable KPM (Kernel Patch Module) support'
+        description: "Enable KPM support"
+        required: true
         type: boolean
         default: false
+
       localversion:
-        description: 'Custom kernel version suffix'
-        required: false
-        default: '-SukiSU-Ultra'
+        description: "Kernel version suffix"
+        required: true
+        default: "-SukiSU-Ultra"
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: Build Kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
 
     steps:
-      - name: Quick Disk Cleanup (2 Seconds)
+      - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
 
-      - name: Checkout Source Repository
+      - name: Checkout Source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          submodules: recursive
 
-      - name: Install Build Dependencies & Clang 18
+      - name: Install Dependencies and Clang 18
         run: |
+          set -e
+
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex git \
-            libelf-dev libncurses5-dev libssl-dev libxml2-utils lz4 python3 \
-            python-is-python3 rsync unzip wget zip cpio device-tree-compiler \
-            dwarves clang-18 lld-18 llvm-18
 
-          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
-            sudo ln -sf /usr/bin/${tool}-18 /usr/bin/${tool}
-          done
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex git \
+            libelf-dev libncurses-dev libssl-dev libxml2-utils \
+            lz4 python3 python-is-python3 rsync unzip wget zip \
+            cpio device-tree-compiler dwarves \
+            clang-18 lld-18 llvm-18
 
-      - name: Setup SukiSU-Ultra in kernel-6.6
-        working-directory: kernel-6.6
+          clang-18 --version
+          ld.lld-18 --version
+          llvm-ar-18 --version
+
+      - name: Verify Kernel Source
         run: |
-          git clone --depth=1 -b ${{ github.event.inputs.ksu_branch }} https://github.com KernelSU
-          bash KernelSU/kernel/setup.sh
+          set -e
 
-      - name: Configure gki_defconfig for SukiSU-Ultra & Samsung GKI
-        working-directory: kernel-6.6
+          test -f build_kernel.sh
+          test -d kernel
+          test -d kernel_device_modules-6.6
+
+          echo "Kernel source verified."
+
+      - name: Integrate SukiSU-Ultra
+        working-directory: kernel
+        env:
+          KSU_BRANCH: ${{ inputs.ksu_branch }}
         run: |
-          DEFCONFIG="arch/arm64/configs/gki_defconfig"
-          
-          cat <<EOF >> "$DEFCONFIG"
+          set -e
+
+          curl -LSs \
+            https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh \
+            -o /tmp/ksu-setup.sh
+
+          bash /tmp/ksu-setup.sh "$KSU_BRANCH"
+
+      - name: Configure SukiSU-Ultra
+        env:
+          ENABLE_KPM: ${{ inputs.enable_kpm }}
+          LOCALVERSION: ${{ inputs.localversion }}
+        run: |
+          set -e
+
+          OVERLAY="$(find . -type f \
+            -name 'S96901AA1.config' -print -quit)"
+
+          if [ -z "$OVERLAY" ]; then
+            echo "ERROR: S96901AA1.config not found."
+            exit 1
+          fi
+
+          echo "Editing configuration: $OVERLAY"
+
+          sed -i -E \
+            '/^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KPROBES|CONFIG_KRETPROBES|CONFIG_EXT4_FS|CONFIG_KPM|CONFIG_KALLSYMS|CONFIG_KALLSYMS_ALL)=/d' \
+            "$OVERLAY"
+
+          cat >> "$OVERLAY" <<EOF
+
+          # SukiSU-Ultra configuration
           CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
           CONFIG_KPROBES=y
-          CONFIG_HAVE_KPROBES=y
-          CONFIG_KPROBE_EVENTS=y
-          CONFIG_OVERLAY_FS=y
-          CONFIG_TMPFS_XATTR=y
-          CONFIG_TMPFS_POSIX_ACL=y
-          CONFIG_LOCALVERSION="${{ github.event.inputs.localversion }}"
+          CONFIG_KRETPROBES=y
+          CONFIG_EXT4_FS=y
+          CONFIG_LOCALVERSION="${LOCALVERSION}"
           EOF
 
-          if [ "${{ github.event.inputs.enable_kpm }}" = "true" ]; then
-            cat <<EOF >> "$DEFCONFIG"
+          if [ "$ENABLE_KPM" = "true" ]; then
+            cat >> "$OVERLAY" <<EOF
           CONFIG_KPM=y
           CONFIG_KALLSYMS=y
           CONFIG_KALLSYMS_ALL=y
           EOF
+          else
+            echo "# CONFIG_KPM is not set" >> "$OVERLAY"
           fi
 
-          sed -i 's/CONFIG_TRIM_UNUSED_KSYMS=y/# CONFIG_TRIM_UNUSED_KSYMS is not set/g' "$DEFCONFIG"
+          echo "SukiSU-Ultra configuration completed."
+          cat "$OVERLAY"
 
-      - name: Compile Kernel 6.6 GKI Image
-        working-directory: kernel-6.6
+      - name: Build Kernel
         run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export LLVM=1
-          export LLVM_IAS=1
+          set -e
 
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
-          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 Image Image.gz
+          chmod +x build_kernel.sh
 
-      - name: Repack boot.img with Stock Release
+          bash build_kernel.sh
+
+      - name: Verify Build Output
         run: |
-          mkdir -p release stock
-          cp kernel-6.6/out/arch/arm64/boot/Image release/
-          cp kernel-6.6/out/arch/arm64/boot/Image.gz release/
+          set -e
 
-          gh release download "Stock-boot.img" -p "boot.img" -D stock/
-        env:
-          GH_TOKEN: ${{ github.token }}
+          DIST="out/target/product/a14xm/obj/KLEAF_OBJ/dist"
 
-      - name: Pack boot.img.zip and Odin .tar
-        run: |
-          if [ -s stock/boot.img ]; then
-            mkdir -p repack && cd repack
-            gh release download v28.1 -R topjohnwu/Magisk -p "Magisk-v28.1.apk"
-            unzip -q Magisk-v28.1.apk lib/x86_64/libmagiskboot.so
-            mv lib/x86_64/libmagiskboot.so magiskboot && chmod +x magiskboot
-
-            cp ../stock/boot.img .
-            ./magiskboot unpack boot.img
-            cp ../release/Image kernel
-            ./magiskboot repack boot.img new-boot.img
-            cp new-boot.img ../release/boot.img
-            cd ../release
-            zip -r boot.img.zip boot.img
-            tar -cvf SM-A146U-P-SukiSU-Ultra-Odin.tar boot.img
+          if [ ! -d "$DIST" ]; then
+            echo "ERROR: Kernel output directory not found."
+            exit 1
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
 
-      - name: Upload Build Artifacts
+          echo "Build output:"
+          ls -lah "$DIST"
+
+          if ! find "$DIST" -type f | grep -q .; then
+            echo "ERROR: No kernel artifacts found."
+            exit 1
+          fi
+
+      - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SM-A146U-P-SukiSU-Ultra-${{ github.run_number }}
-          path: release/*
+          path: |
+            out/target/product/a14xm/obj/KLEAF_OBJ/dist/**
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
