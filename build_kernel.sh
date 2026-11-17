@@ -1,31 +1,61 @@
-# ====================================================================
-# SukiSU Ultra LKM Injection Extension
-# ====================================================================
-echo "[+] Initializing SukiSU Ultra LKM Extension..."
+#!/usr/bin/env bash
+set -e
 
-# 1. Clone SukiSU Ultra source code if not already present
-if [ ! -d "suki-src" ]; then
-    git clone --depth=1 https://github.com suki-src
+echo "=== [1/5] Setting up Environment & Toolchain Paths ==="
+export ARCH=arm64
+export SUBARCH=arm64
+
+# Point to the downloaded AOSP Clang toolchain in your runner
+export PATH="$(pwd)/clang/bin:$PATH"
+export CLANG_TRIPLE=aarch64-linux-gnu-
+export CROSS_COMPILE=aarch64-linux-android-
+export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+# Number of parallel jobs for faster compilation
+JOBS=$(nproc --all)
+OUT_DIR="out"
+mkdir -p "$OUT_DIR"
+
+echo "=== [2/5] Integrating SukiSU Source ==="
+# Check if SukiSU source folder exists in the kernel tree, if not clone it
+# (Adjust target directory based on how your repo structures the drivers/kernel folder)
+KERNEL_SRC="kernel-6.6" # or 'kernel' depending on your repo layout
+if [ ! -d "$KERNEL_SRC/drivers/sukisu" ]; then
+  echo "Cloning SukiSU source into kernel tree..."
+  git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra "$KERNEL_SRC/drivers/sukisu"
+  
+  # Inject SukiSU hooks into drivers/Kconfig and drivers/Makefile if not already present
+  if ! grep -q "sukisu" "$KERNEL_SRC/drivers/Kconfig"; then
+    echo 'source "drivers/sukisu/Kconfig"' >> "$KERNEL_SRC/drivers/Kconfig"
+  fi
+  if ! grep -q "sukisu" "$KERNEL_SRC/drivers/Makefile"; then
+    echo 'obj-y += sukisu/' >> "$KERNEL_SRC/drivers/Makefile"
+  fi
 fi
 
-# 2. Derive build definitions from your existing GKI build setup
-# Assumes your script sets $OUT_DIR or a target build output directory. 
-# Adjust 'kernel-6.6' to matching path if your script relies on an absolute path.
-KERNEL_SRC_DIR="$(pwd)/kernel-6.6"
-OUTPUT_MODULE_DIR="$(pwd)/out/suki_module"
+echo "=== [3/5] Configuring Kernel with SukiSU Enabled ==="
+cd "$KERNEL_SRC"
 
-mkdir -p "$OUTPUT_MODULE_DIR"
+# Generate base GKI configuration
+make O="../$OUT_DIR" gki_defconfig
 
-echo "[+] Compiling SukiSU out-of-tree LKM against Kernel 6.6 tree..."
-make -C "$KERNEL_SRC_DIR" \
-     O="$(pwd)/out" \
-     ARCH=arm64 \
-     CC=clang \
-     CROSS_COMPILE=aarch64-linux-gnu- \
-     CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-     M="$(pwd)/suki-src/kernel" \
-     modules
+# Enable SukiSU and required security/namespace options in .config
+./scripts/config --file "../$OUT_DIR/.config" \
+  -e CONFIG_SUKISU \
+  -e CONFIG_KPROBES \
+  -e CONFIG_HAVE_KPROBES \
+  -e CONFIG_MODULES
 
-# 3. Collect the generated .ko driver
-find suki-src/kernel/ -name "*.ko" -exec cp {} "$OUTPUT_MODULE_DIR" \;
-echo "[+] SukiSU Ultra module compilation finished!"
+# Old config refresh
+make O="../$OUT_DIR" olddefconfig
+
+echo "=== [4/5] Compiling Monolithic GKI Image ==="
+make O="../$OUT_DIR" -j$JOBS Image
+
+echo "=== [5/5] Build Complete! ==="
+if [ -f "../$OUT_DIR/arch/arm64/boot/Image" ]; then
+  echo "Success: Kernel Image generated at out/arch/arm64/boot/Image"
+else
+  echo "Error: Kernel Image compilation failed or output path mismatch."
+  exit 1
+fi
