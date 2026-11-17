@@ -34,15 +34,11 @@ jobs:
 
       - name: Package AnyKernel3 Flashable Zip
         run: |
-          git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           
-          # Locate compiled Image output
-          if [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
-            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
-          elif [ -f out/arch/arm64/boot/Image ]; then
+          # Locate compiled Image output from our direct out/ folder
+          if [ -f out/arch/arm64/boot/Image ]; then
             cp out/arch/arm64/boot/Image AnyKernel3/
-          elif [ -f kernel-6.6/arch/arm64/boot/Image ]; then
-            cp kernel-6.6/arch/arm64/boot/Image AnyKernel3/
           else
             FOUND_IMG=$(find . -name "Image" | head -n 1)
             if [ -n "$FOUND_IMG" ]; then
