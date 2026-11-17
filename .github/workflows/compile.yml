@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libcrypto++-dev \
-          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo python3-pip
+          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo python3-pip lz4
 
       - name: Setup AOSP Clang Toolchain
         run: |
@@ -32,22 +32,27 @@ jobs:
           chmod +x build_kernel.sh
           ./build_kernel.sh
 
-      - name: Pack into boot.zip via magiskboot
+      - name: Pack boot.img.lz4 into boot.zip via magiskboot
         run: |
-          # 1. Download stock boot.img for SM-A146P (or place yours in the repo and reference it)
-          # For now, let's download a helper tool and magiskboot
+          # 1. Get magiskboot
           curl -LO https://github.com/topjohnwu/Magisk/releases/download/v26.3/Magisk-v26.3.apk
           unzip Magisk-v26.3.apk lib/arm64-v8a/libmagiskboot.so
           mv lib/arm64-v8a/libmagiskboot.so magiskboot
           chmod +x magiskboot
 
-          # 2. Assume stock boot.img is placed in your repo root, or fetch it
-          if [ ! -f "boot.img" ]; then
-            echo "Error: Please place your stock boot.img in the root of your repository!"
+          # 2. Download or fetch your stock boot.img.lz4 (or place a direct direct-download link to your stock boot.img.lz4 here)
+          # Alternatively, if you have it hosted raw elsewhere, pull it via curl:
+          # curl -L -o boot.img.lz4 "YOUR_DIRECT_DOWNLOAD_LINK_HERE"
+          
+          # If using a local file in repo (ensure it's under 25MB or tracked via LFS, but better to download via direct link):
+          if [ -f "boot.img.lz4" ]; then
+            lz4 -d boot.img.lz4 boot.img
+          else
+            echo "Error: Please provide stock boot.img.lz4"
             exit 1
           fi
 
-          # 3. Unpack stock boot.img
+          # 3. Unpack stock boot.img with magiskboot
           ./magiskboot unpack boot.img
 
           # 4. Replace kernel with our newly compiled SukiSU Image
@@ -58,17 +63,18 @@ jobs:
             exit 1
           fi
 
-          # 5. Repack into new boot.img
+          # 5. Repack and compress back to lz4 format if Samsung expects it
           ./magiskboot repack boot.img boot-sukisu.img
+          lz4 -z boot-sukisu.img boot.img.lz4
 
-          # 6. Compress into boot.zip
+          # 6. Zip it up for download
           mkdir -p boot_release
-          mv boot-sukisu.img boot_release/boot.img
+          cp boot.img.lz4 boot_release/
           cd boot_release
-          zip -r9 ../boot.zip boot.img
+          zip -r9 ../boot-lz4.zip boot.img.lz4
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SukiSU-Boot-Image-SM-A146P
-          path: boot.zip
+          name: SukiSU-Boot-LZ4-SM-A146P
+          path: boot-lz4.zip
