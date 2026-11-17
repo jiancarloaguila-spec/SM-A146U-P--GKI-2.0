@@ -1,4 +1,4 @@
-name: Build SM-A146P GKI 2.0 SukiSU
+name: Build SM-A146P GKI 2.0 SukiSU boot.zip
 
 on:
   workflow_dispatch:
@@ -32,28 +32,43 @@ jobs:
           chmod +x build_kernel.sh
           ./build_kernel.sh
 
-      - name: Package AnyKernel3 Flashable Zip
+      - name: Pack into boot.zip via magiskboot
         run: |
-          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
-          
-          # Locate compiled Image output from our direct out/ folder
-          if [ -f out/arch/arm64/boot/Image ]; then
-            cp out/arch/arm64/boot/Image AnyKernel3/
-          else
-            FOUND_IMG=$(find . -name "Image" | head -n 1)
-            if [ -n "$FOUND_IMG" ]; then
-              cp "$FOUND_IMG" AnyKernel3/
-            else
-              echo "Error: Compiled Image not found!"
-              exit 1
-            fi
+          # 1. Download stock boot.img for SM-A146P (or place yours in the repo and reference it)
+          # For now, let's download a helper tool and magiskboot
+          curl -LO https://github.com/topjohnwu/Magisk/releases/download/v26.3/Magisk-v26.3.apk
+          unzip Magisk-v26.3.apk lib/arm64-v8a/libmagiskboot.so
+          mv lib/arm64-v8a/libmagiskboot.so magiskboot
+          chmod +x magiskboot
+
+          # 2. Assume stock boot.img is placed in your repo root, or fetch it
+          if [ ! -f "boot.img" ]; then
+            echo "Error: Please place your stock boot.img in the root of your repository!"
+            exit 1
           fi
-          
-          cd AnyKernel3
-          zip -r9 ../SukiSU-GKI-SM-A146P.zip * -x .git* README.md
+
+          # 3. Unpack stock boot.img
+          ./magiskboot unpack boot.img
+
+          # 4. Replace kernel with our newly compiled SukiSU Image
+          if [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image kernel
+          else
+            echo "Error: Compiled Image not found!"
+            exit 1
+          fi
+
+          # 5. Repack into new boot.img
+          ./magiskboot repack boot.img boot-sukisu.img
+
+          # 6. Compress into boot.zip
+          mkdir -p boot_release
+          mv boot-sukisu.img boot_release/boot.img
+          cd boot_release
+          zip -r9 ../boot.zip boot.img
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SukiSU-GKI-SM-A146P-Build
-          path: SukiSU-GKI-SM-A146P.zip
+          name: SukiSU-Boot-Image-SM-A146P
+          path: boot.zip
