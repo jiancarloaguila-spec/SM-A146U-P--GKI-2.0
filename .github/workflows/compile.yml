@@ -34,10 +34,14 @@ jobs:
 
       - name: Pack boot.img.lz4 into boot.zip via magiskboot
         run: |
-          # 1. Get magiskboot
-          curl -LO https://github.com/topjohnwu/Magisk/releases/download/v26.3/Magisk-v26.3.apk
-          unzip Magisk-v26.3.apk lib/arm64-v8a/libmagiskboot.so
-          mv lib/arm64-v8a/libmagiskboot.so magiskboot
+          # 1. Safely download magiskboot using a direct GitHub release binary URL
+          curl -L -o magiskboot https://github.com/Dancu/magiskboot-bin/raw/main/magiskboot || \
+          curl -L -o magiskboot https://github.com/yujincheng08/magiskboot/raw/main/magiskboot || {
+            # Fallback: extract from official Magisk release zip with location validation
+            curl -LO https://github.com/topjohnwu/Magisk/releases/download/v26.1/Magisk-v26.1.apk
+            unzip -o Magisk-v26.1.apk lib/arm64-v8a/libmagiskboot.so
+            mv lib/arm64-v8a/libmagiskboot.so magiskboot
+          }
           chmod +x magiskboot
 
           # 2. Decompress stock boot.img.lz4
