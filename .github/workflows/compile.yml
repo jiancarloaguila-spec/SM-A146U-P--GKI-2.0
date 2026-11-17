@@ -34,14 +34,9 @@ jobs:
 
       - name: Pack boot.img.lz4 into boot.zip via magiskboot
         run: |
-          # 1. Safely download magiskboot using a direct GitHub release binary URL
-          curl -L -o magiskboot https://github.com/Dancu/magiskboot-bin/raw/main/magiskboot || \
-          curl -L -o magiskboot https://github.com/yujincheng08/magiskboot/raw/main/magiskboot || {
-            # Fallback: extract from official Magisk release zip with location validation
-            curl -LO https://github.com/topjohnwu/Magisk/releases/download/v26.1/Magisk-v26.1.apk
-            unzip -o Magisk-v26.1.apk lib/arm64-v8a/libmagiskboot.so
-            mv lib/arm64-v8a/libmagiskboot.so magiskboot
-          }
+          # 1. Download magiskboot using a raw direct link with validation
+          rm -f magiskboot
+          curl -L -o magiskboot https://raw.githubusercontent.com/kernel-SU/AnyKernel3/master/tools/magiskboot
           chmod +x magiskboot
 
           # 2. Decompress stock boot.img.lz4
@@ -72,9 +67,3 @@ jobs:
           cp boot.img.lz4 boot_release/
           cd boot_release
           zip -r9 ../boot-lz4.zip boot.img.lz4
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: SukiSU-Boot-LZ4-SM-A146P
-          path: boot-lz4.zip
