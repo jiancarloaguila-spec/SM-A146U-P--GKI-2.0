@@ -22,7 +22,7 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-          curl -fSL -o clang.tar.gz https://github.com/SA9990/Toolchain/releases/download/clang-r536225/clang-r536225.tar.gz
+          curl -fSL -o clang.tar.gz https://github.com
           tar -xzf clang.tar.gz
           rm -f clang.tar.gz
           echo "$(pwd)/bin" >> $GITHUB_PATH
@@ -34,9 +34,9 @@ jobs:
 
       - name: Pack boot.img.lz4 into boot.zip via magiskboot
         run: |
-          # 1. Download magiskboot using a raw direct link with validation
+          # 1. Download x86_64 architecture magiskboot for Linux runner
           rm -f magiskboot
-          curl -L -o magiskboot https://raw.githubusercontent.com/kernel-SU/AnyKernel3/master/tools/magiskboot
+          curl -L -o magiskboot "https://github.com"
           chmod +x magiskboot
 
           # 2. Decompress stock boot.img.lz4
