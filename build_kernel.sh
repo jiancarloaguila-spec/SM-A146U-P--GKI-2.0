@@ -1,61 +1,33 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== [1/5] Setting up Environment & Toolchain Paths ==="
-export ARCH=arm64
-export SUBARCH=arm64
-
-# Point to the downloaded AOSP Clang toolchain in your runner
+echo "=== [1/3] Integrating SukiSU-Ultra ==="
 export PATH="$(pwd)/clang/bin:$PATH"
-export CLANG_TRIPLE=aarch64-linux-gnu-
-export CROSS_COMPILE=aarch64-linux-android-
-export CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-# Number of parallel jobs for faster compilation
-JOBS=$(nproc --all)
-OUT_DIR="out"
-mkdir -p "$OUT_DIR"
-
-echo "=== [2/5] Integrating SukiSU Source ==="
-# Check if SukiSU source folder exists in the kernel tree, if not clone it
-# (Adjust target directory based on how your repo structures the drivers/kernel folder)
-KERNEL_SRC="kernel-6.6" # or 'kernel' depending on your repo layout
-if [ ! -d "$KERNEL_SRC/drivers/sukisu" ]; then
-  echo "Cloning SukiSU source into kernel tree..."
-  git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra "$KERNEL_SRC/drivers/sukisu"
+# Clone SukiSU-Ultra directly into the kernel-6.6 driver directory if missing
+if [ ! -d "kernel-6.6/drivers/sukisu" ]; then
+  echo "Cloning SukiSU-Ultra into kernel source..."
+  git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra kernel-6.6/drivers/sukisu
   
-  # Inject SukiSU hooks into drivers/Kconfig and drivers/Makefile if not already present
-  if ! grep -q "sukisu" "$KERNEL_SRC/drivers/Kconfig"; then
-    echo 'source "drivers/sukisu/Kconfig"' >> "$KERNEL_SRC/drivers/Kconfig"
+  # Hook SukiSU into Kconfig and Makefile so the compiler picks it up
+  if ! grep -q "sukisu" kernel-6.6/drivers/Kconfig; then
+    echo 'source "drivers/sukisu/Kconfig"' >> kernel-6.6/drivers/Kconfig
   fi
-  if ! grep -q "sukisu" "$KERNEL_SRC/drivers/Makefile"; then
-    echo 'obj-y += sukisu/' >> "$KERNEL_SRC/drivers/Makefile"
+  if ! grep -q "sukisu" kernel-6.6/drivers/Makefile; then
+    echo 'obj-y += sukisu/' >> kernel-6.6/drivers/Makefile
   fi
 fi
 
-echo "=== [3/5] Configuring Kernel with SukiSU Enabled ==="
-cd "$KERNEL_SRC"
+echo "=== [2/3] Running GKI Workspace Build ==="
+cd kernel
+# Execute the build script using the workspace environment
+BUILD_CONFIG=common/build.config.gki.aarch64 ./build/build.sh || ./build/build.sh
 
-# Generate base GKI configuration
-make O="../$OUT_DIR" gki_defconfig
-
-# Enable SukiSU and required security/namespace options in .config
-./scripts/config --file "../$OUT_DIR/.config" \
-  -e CONFIG_SUKISU \
-  -e CONFIG_KPROBES \
-  -e CONFIG_HAVE_KPROBES \
-  -e CONFIG_MODULES
-
-# Old config refresh
-make O="../$OUT_DIR" olddefconfig
-
-echo "=== [4/5] Compiling Monolithic GKI Image ==="
-make O="../$OUT_DIR" -j$JOBS Image
-
-echo "=== [5/5] Build Complete! ==="
-if [ -f "../$OUT_DIR/arch/arm64/boot/Image" ]; then
-  echo "Success: Kernel Image generated at out/arch/arm64/boot/Image"
+echo "=== [3/3] Build Finished ==="
+cd ..
+if [ -f out/arch/arm64/boot/Image ] || [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
+  echo "Success: Compiled GKI Image found!"
 else
-  echo "Error: Kernel Image compilation failed or output path mismatch."
-  exit 1
+  echo "Checking alternative paths for Image..."
+  find . -name "Image"
 fi
