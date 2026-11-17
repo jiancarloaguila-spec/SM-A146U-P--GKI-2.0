@@ -22,5 +22,42 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-          curl -fSL -o clang.tar.gz https://github.com/ZyCromerZ/Clang/releases/download/19.0.0-20240416-release/Clang-19.0.0-20240416.tar.gz
-          tar -
+          curl -fSL -o clang.tar.gz https://github.com/SA9990/Toolchain/releases/download/clang-r536225/clang-r536225.tar.gz
+          tar -xzf clang.tar.gz
+          rm -f clang.tar.gz
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Run Build Script
+        run: |
+          chmod +x build_kernel.sh
+          ./build_kernel.sh
+
+      - name: Package AnyKernel3 Flashable Zip
+        run: |
+          git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
+          
+          # Locate compiled Image output
+          if [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
+            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f kernel-6.6/arch/arm64/boot/Image ]; then
+            cp kernel-6.6/arch/arm64/boot/Image AnyKernel3/
+          else
+            FOUND_IMG=$(find . -name "Image" | head -n 1)
+            if [ -n "$FOUND_IMG" ]; then
+              cp "$FOUND_IMG" AnyKernel3/
+            else
+              echo "Error: Compiled Image not found!"
+              exit 1
+            fi
+          fi
+          
+          cd AnyKernel3
+          zip -r9 ../SukiSU-GKI-SM-A146P.zip * -x .git* README.md
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU-GKI-SM-A146P-Build
+          path: SukiSU-GKI-SM-A146P.zip
