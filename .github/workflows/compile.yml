@@ -12,45 +12,43 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Install Android Kernel Tooling Dependencies
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libcrypto++-dev \
-          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo
+          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo python3-pip
 
-      - name: Setup Toolchain
+      - name: Setup AOSP Clang Toolchain
         run: |
           mkdir -p clang
           cd clang
-          # Pulling standard AOSP Clang toolchain
           curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz
           tar -xzf clang-r450784d.tar.gz
           rm -f clang-r450784d.tar.gz
           echo "$(pwd)/bin" >> $GITHUB_PATH
 
-      - name: Execute Kernel Build Script
+      - name: Run Build Script
         run: |
           chmod +x build_kernel.sh
           ./build_kernel.sh
 
-      - name: Package GKI Flashable Zip
+      - name: Package AnyKernel3 Flashable Zip
         run: |
           git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
           
-          # Locate and copy the compiled GKI kernel Image
-          if [ -f out/arch/arm64/boot/Image ]; then
+          # Find compiled Image output from out/ or workspace
+          if [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
+            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f out/arch/arm64/boot/Image ]; then
             cp out/arch/arm64/boot/Image AnyKernel3/
           elif [ -f kernel-6.6/arch/arm64/boot/Image ]; then
             cp kernel-6.6/arch/arm64/boot/Image AnyKernel3/
-          elif [ -f kernel/arch/arm64/boot/Image ]; then
-            cp kernel/arch/arm64/boot/Image AnyKernel3/
           fi
           
-          # Compress into a flashable zip archive for AnyKernel3
           cd AnyKernel3
           zip -r9 ../SukiSU-GKI-SM-A146P.zip * -x .git* README.md
 
-      - name: Upload Flashable Artifacts
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SukiSU-GKI-SM-A146P-Build
