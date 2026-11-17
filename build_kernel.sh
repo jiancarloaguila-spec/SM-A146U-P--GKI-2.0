@@ -17,12 +17,36 @@ mkdir -p "$OUT_DIR"
 # Generate base GKI arm64 config using Clang/LLVM
 make O="$OUT_DIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
 
-# Ensure KPROBES and KSU flags are enabled for GKI 2.0
+# Ensure KPROBES, KSU, and Mountify support flags are enabled
 ./scripts/config --file "$OUT_DIR/.config" \
   -e CONFIG_KSU \
   -e CONFIG_KPROBES \
   -e CONFIG_HAVE_KPROBES \
-  -e CONFIG_KPROBE_EVENTS
+  -e CONFIG_KPROBE_EVENTS \
+  -e CONFIG_OVERLAY_FS \
+  -e CONFIG_TMPFS_XATTR \
+  -e CONFIG_TMPFS_POSIX_ACL \
+  -e CONFIG_KALLSYMS \
+  -e CONFIG_KALLSYMS_ALL \
+  -e CONFIG_KPM
+
+# Nuke Samsung Knox and Security features to prevent bootloops on SM-A146P
+echo "Disabling Samsung security features and Knox..."
+./scripts/config --file "$OUT_DIR/.config" \
+  --disable CONFIG_UH \
+  --disable CONFIG_UH_RKP \
+  --disable CONFIG_UH_LKMAUTH \
+  --disable CONFIG_UH_LKM_BLOCK \
+  --disable CONFIG_RKP \
+  --disable CONFIG_RKP_CFP_JOPP \
+  --disable CONFIG_RKP_CFP_ROPP \
+  --disable CONFIG_RKP_CFP \
+  --disable CONFIG_SECURITY_DEFEX \
+  --disable CONFIG_PROCA \
+  --disable CONFIG_FIVE \
+  --disable CONFIG_KDP \
+  --disable CONFIG_KDP_NS \
+  --disable CONFIG_KNOX_NCM
 
 make O="$OUT_DIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
 
