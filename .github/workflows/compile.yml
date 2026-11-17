@@ -22,34 +22,5 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz
-          tar -xzf clang-r450784d.tar.gz
-          rm -f clang-r450784d.tar.gz
-          echo "$(pwd)/bin" >> $GITHUB_PATH
-
-      - name: Run Build Script
-        run: |
-          chmod +x build_kernel.sh
-          ./build_kernel.sh
-
-      - name: Package AnyKernel3 Flashable Zip
-        run: |
-          git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
-          
-          # Find compiled Image output from out/ or workspace
-          if [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
-            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
-          elif [ -f out/arch/arm64/boot/Image ]; then
-            cp out/arch/arm64/boot/Image AnyKernel3/
-          elif [ -f kernel-6.6/arch/arm64/boot/Image ]; then
-            cp kernel-6.6/arch/arm64/boot/Image AnyKernel3/
-          fi
-          
-          cd AnyKernel3
-          zip -r9 ../SukiSU-GKI-SM-A146P.zip * -x .git* README.md
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: SukiSU-GKI-SM-A146P-Build
-          path: SukiSU-GKI-SM-A146P.zip
+          curl -fSL -o clang.tar.gz https://github.com/ZyCromerZ/Clang/releases/download/19.0.0-20240416-release/Clang-19.0.0-20240416.tar.gz
+          tar -
