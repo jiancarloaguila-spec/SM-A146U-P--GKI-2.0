@@ -31,7 +31,7 @@ runs:
      elif [[ $BRANCH == SM-A556* ]]; then
          target_config="$COMMON/arch/arm64/configs/s5e8845-bazel_defconfig"
      elif [[ $BRANCH == SM-A055* || $BRANCH == SM-A146P* ]]; then
-         target_config="$CONFIG/kernel/kernel_device_modules-6.6/arch/arm64/configs/mediatek-bazel_defconfig"
+         target_config="kernel-6.6/arch/arm64/configs/mediatek-bazel_defconfig"
      elif [[ $BRANCH == SM-A075* ]]; then
          target_config="$COMMON/arch/arm64/configs/a07_00_defconfig"
      else
@@ -42,7 +42,6 @@ runs:
      if [ -n "$target_config" ]; then
       echo "Nuking Samsung Knox/Root protection in: $target_config"
 
-     
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_RKP
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKMAUTH
@@ -56,9 +55,7 @@ runs:
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_FIVE
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP_NS
-     #"$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KNOX
      "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KNOX_NCM
-     #"$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KNOX_KAP
      fi
 
   - name: remove check_defconfig
