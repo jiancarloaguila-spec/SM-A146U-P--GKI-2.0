@@ -40,15 +40,11 @@ jobs:
           mv lib/arm64-v8a/libmagiskboot.so magiskboot
           chmod +x magiskboot
 
-          # 2. Download or fetch your stock boot.img.lz4 (or place a direct direct-download link to your stock boot.img.lz4 here)
-          # Alternatively, if you have it hosted raw elsewhere, pull it via curl:
-          # curl -L -o boot.img.lz4 "YOUR_DIRECT_DOWNLOAD_LINK_HERE"
-          
-          # If using a local file in repo (ensure it's under 25MB or tracked via LFS, but better to download via direct link):
+          # 2. Decompress stock boot.img.lz4
           if [ -f "boot.img.lz4" ]; then
             lz4 -d boot.img.lz4 boot.img
           else
-            echo "Error: Please provide stock boot.img.lz4"
+            echo "Error: boot.img.lz4 not found in root directory!"
             exit 1
           fi
 
@@ -63,7 +59,7 @@ jobs:
             exit 1
           fi
 
-          # 5. Repack and compress back to lz4 format if Samsung expects it
+          # 5. Repack and compress back to lz4 format
           ./magiskboot repack boot.img boot-sukisu.img
           lz4 -z boot-sukisu.img boot.img.lz4
 
