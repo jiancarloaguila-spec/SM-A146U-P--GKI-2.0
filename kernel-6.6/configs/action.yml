@@ -1,0 +1,66 @@
+name: add configs
+description: add configs and disabling securities
+
+runs:
+ using: composite
+ steps:
+  - name: add mountify support
+    shell: bash
+    run: |
+     GKI_DEFCONFIG="${GKI_DEFCONFIG:-common/arch/arm64/configs/gki_defconfig}"
+     COMMON="${COMMON:-common}"
+     
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_OVERLAY_FS
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_XATTR
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_POSIX_ACL
+     
+  - name: nuke securities for root access
+    shell: bash
+    run: |
+     COMMON="${COMMON:-common}"
+     target_config=""
+     
+     if [[ "$BRANCH" == SM-S938B* || "$BRANCH" == "SM-S931B-Oneui8" ]]; then
+         echo "Nothing to see here, moving on..."
+     elif [[ "$BRANCH" == SM-S926B* ]]; then
+         target_config="$COMMON/arch/arm64/configs/s5e9945-bazel_defconfig"
+     elif [[ "$BRANCH" == SM-A556* ]]; then
+         target_config="$COMMON/arch/arm64/configs/s5e8845-bazel_defconfig"
+     elif [[ "$BRANCH" == SM-A055* || "$BRANCH" == SM-A146P* ]]; then
+         target_config="kernel/arch/arm64/configs/mediatek-bazel_defconfig"
+     elif [[ "$BRANCH" == SM-A075* ]]; then
+         target_config="$COMMON/arch/arm64/configs/a07_00_defconfig"
+     else
+         target_config="${GKI_DEFCONFIG:-common/arch/arm64/configs/gki_defconfig}"
+     fi
+     
+     if [ -n "$target_config" ] && [ -f "$target_config" ]; then
+      echo "Nuking Samsung Knox/Root protection in: $target_config"
+
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_RKP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKMAUTH
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKM_BLOCK
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_JOPP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_ROPP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_SECURITY_DEFEX
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_PROCA
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_FIVE
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP_NS
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KNOX_NCM
+     else
+      echo "WARNING: Target config file not found or empty: $target_config"
+     fi
+
+  - name: remove check_defconfig
+    shell: bash
+    run: |
+     COMMON="${COMMON:-common}"
+     if [ -f "$COMMON/build.config.gki" ]; then
+         sed -i 's/check_defconfig//' "$COMMON/build.config.gki"
+     elif [ -f "./build.config.gki" ]; then
+         sed -i 's/check_defconfig//' ./build.config.gki
+     fi
