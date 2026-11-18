@@ -1,4 +1,4 @@
-name: Build SM-A146P GKI 2.0 SukiSU boot.zip
+name: Build SM-A146P GKI 2.0 SukiSU
 
 on:
   workflow_dispatch:
@@ -16,13 +16,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libcrypto++-dev \
-          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo python3-pip lz4
+          libncurses-dev lld llvm libelf-dev zip openjdk-17-jdk repo python3-pip
 
       - name: Setup AOSP Clang Toolchain
         run: |
           mkdir -p clang
           cd clang
-          curl -fSL -o clang.tar.gz https://github.com
+          curl -fSL -o clang.tar.gz https://github.com/SA9990/Toolchain/releases/download/clang-r536225/clang-r536225.tar.gz
           tar -xzf clang.tar.gz
           rm -f clang.tar.gz
           echo "$(pwd)/bin" >> $GITHUB_PATH
@@ -32,38 +32,32 @@ jobs:
           chmod +x build_kernel.sh
           ./build_kernel.sh
 
-      - name: Pack boot.img.lz4 into boot.zip via magiskboot
+      - name: Package AnyKernel3 Flashable Zip
         run: |
-          # 1. Download x86_64 architecture magiskboot for Linux runner
-          rm -f magiskboot
-          curl -L -o magiskboot "https://github.com"
-          chmod +x magiskboot
-
-          # 2. Decompress stock boot.img.lz4
-          if [ -f "boot.img.lz4" ]; then
-            lz4 -d boot.img.lz4 boot.img
+          git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
+          
+          # Locate compiled Image output
+          if [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
+            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f kernel-6.6/arch/arm64/boot/Image ]; then
+            cp kernel-6.6/arch/arm64/boot/Image AnyKernel3/
           else
-            echo "Error: boot.img.lz4 not found in root directory!"
-            exit 1
+            FOUND_IMG=$(find . -name "Image" | head -n 1)
+            if [ -n "$FOUND_IMG" ]; then
+              cp "$FOUND_IMG" AnyKernel3/
+            else
+              echo "Error: Compiled Image not found!"
+              exit 1
+            fi
           fi
+          
+          cd AnyKernel3
+          zip -r9 ../SukiSU-GKI-SM-A146P.zip * -x .git* README.md
 
-          # 3. Unpack stock boot.img with magiskboot
-          ./magiskboot unpack boot.img
-
-          # 4. Replace kernel with our newly compiled SukiSU Image
-          if [ -f out/arch/arm64/boot/Image ]; then
-            cp out/arch/arm64/boot/Image kernel
-          else
-            echo "Error: Compiled Image not found!"
-            exit 1
-          fi
-
-          # 5. Repack and compress back to lz4 format
-          ./magiskboot repack boot.img boot-sukisu.img
-          lz4 -z boot-sukisu.img boot.img.lz4
-
-          # 6. Zip it up for download
-          mkdir -p boot_release
-          cp boot.img.lz4 boot_release/
-          cd boot_release
-          zip -r9 ../boot-lz4.zip boot.img.lz4
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU-GKI-SM-A146P-Build
+          path: SukiSU-GKI-SM-A146P.zip
