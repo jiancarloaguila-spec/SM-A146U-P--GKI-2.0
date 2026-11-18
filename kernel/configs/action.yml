@@ -7,60 +7,45 @@ runs:
   - name: add mountify support
     shell: bash
     run: |
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_OVERLAY_FS
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_XATTR
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_POSIX_ACL
+     GKI_DEFCONFIG="${GKI_DEFCONFIG:-common/arch/arm64/configs/gki_defconfig}"
+     COMMON="${COMMON:-common}"
      
-  - name: enable KPM support
-    shell: bash
-    run: |
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_KALLSYMS
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_KALLSYMS_ALL
-     "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_KPM
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_OVERLAY_FS
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_XATTR
+     python3 "$COMMON/scripts/config" --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_POSIX_ACL
      
   - name: nuke securities for root access
     shell: bash
     run: |
-     # 1. Determine which defconfig file needs to be patched based on the branch
+     COMMON="${COMMON:-common}"
      target_config=""
      
-     if [[ $BRANCH == SM-S938B* || "$BRANCH" == "SM-S931B-Oneui8" ]]; then
+     if [[ "$BRANCH" == SM-S938B* \vert{}\vert{} "$BRANCH" == "SM-S931B-Oneui8" ]]; then
          echo "Nothing to see here, moving on..."
-     elif [[ $BRANCH == SM-S926B* ]]; then
+     elif [[ "$BRANCH" == SM-S926B* ]]; then
          target_config="$COMMON/arch/arm64/configs/s5e9945-bazel_defconfig"
-     elif [[ $BRANCH == SM-A556* ]]; then
+     elif [[ "$BRANCH" == SM-A556* ]]; then
          target_config="$COMMON/arch/arm64/configs/s5e8845-bazel_defconfig"
-     elif [[ $BRANCH == SM-A055* || $BRANCH == SM-A146P* ]]; then
+     elif [[ "$BRANCH" == SM-A055* \vert{}\vert{} "$BRANCH" == SM-A146P* ]]; then
          target_config="kernel-6.6/arch/arm64/configs/mediatek-bazel_defconfig"
-     elif [[ $BRANCH == SM-A075* ]]; then
+     elif [[ "$BRANCH" == SM-A075* ]]; then
          target_config="$COMMON/arch/arm64/configs/a07_00_defconfig"
      else
-         target_config="$GKI_DEFCONFIG"
+         target_config="${GKI_DEFCONFIG:-common/arch/arm64/configs/gki_defconfig}"
      fi
      
-     # 2. Apply the nuke modifications exactly once if a target file was assigned
-     if [ -n "$target_config" ]; then
+     if [ -n "$target_config" ] && [ -f "$target_config" ]; then
       echo "Nuking Samsung Knox/Root protection in: $target_config"
 
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_RKP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKMAUTH
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKM_BLOCK
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_JOPP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_ROPP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_SECURITY_DEFEX
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_PROCA
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_FIVE
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KDP_NS
-     "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_KNOX_NCM
-     fi
-
-  - name: remove check_defconfig
-    shell: bash
-    run: |
-     cd "$COMMON"
-     # Remove check_defconfig
-     sed -i 's/check_defconfig//' ./build.config.gki
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_RKP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKMAUTH
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_UH_LKM_BLOCK
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_JOPP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP_ROPP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_RKP_CFP
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_SECURITY_DEFEX
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_PROCA
+      python3 "$COMMON/scripts/config" --file "$target_config" --disable CONFIG_FIVE
+      python3 "$COMMON/scripts/
