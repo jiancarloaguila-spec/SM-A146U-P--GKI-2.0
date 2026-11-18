@@ -51,13 +51,13 @@ jobs:
 
       - name: Package AnyKernel3 Flashable Zip
         run: |
-          git clone https://github.com/kernel-swaps/AnyKernel3 -b master AnyKernel3
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           
-          # Fixed path check for Android 15 6.6 GKI dist outputs
-          if [ -f out/android15-6.6/dist/Image ]; then
+          # Locate compiled Image output matching your build script
+          if [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image AnyKernel3/
+          elif [ -f out/android15-6.6/dist/Image ]; then
             cp out/android15-6.6/dist/Image AnyKernel3/
-          elif [ -f out/kernel-6.6/arch/arm64/boot/Image ]; then
-            cp out/kernel-6.6/arch/arm64/boot/Image AnyKernel3/
           else
             FOUND_IMG=$(find . -name "Image" | head -n 1)
             if [ -n "$FOUND_IMG" ]; then
