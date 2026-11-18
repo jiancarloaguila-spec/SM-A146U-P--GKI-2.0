@@ -17,7 +17,7 @@ mkdir -p "$OUT_DIR"
 # Generate base GKI arm64 config using Clang/LLVM
 make O="$OUT_DIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
 
-# Ensure KPROBES, KSU, and Mountify support flags are enabled
+# Ensure KPROBES, KSU, and Mountify support flags are enabled (without KPM)
 ./scripts/config --file "$OUT_DIR/.config" \
   -e CONFIG_KSU \
   -e CONFIG_KPROBES \
@@ -26,11 +26,10 @@ make O="$OUT_DIR" ARCH=arm64 LLVM=1 LLVM_IAS=1 gki_defconfig
   -e CONFIG_OVERLAY_FS \
   -e CONFIG_TMPFS_XATTR \
   -e CONFIG_TMPFS_POSIX_ACL \
-  -e CONFIG_KALLSYMS \
-  -e CONFIG_KALLSYMS_ALL \
-  -e CONFIG_KPM
+  -e CONFIG_IKCONFIG \
+  -e CONFIG_IKCONFIG_PROC
 
-# Nuke Samsung Knox and Security features to prevent bootloops on SM-A146P
+# Nuke Samsung Knox and Security features if present in tree
 echo "Disabling Samsung security features and Knox..."
 ./scripts/config --file "$OUT_DIR/.config" \
   --disable CONFIG_UH \
