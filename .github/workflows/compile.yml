@@ -27,7 +27,7 @@ jobs:
           rm -f clang.tar.gz
           echo "$(pwd)/bin" >> $GITHUB_PATH
 
-      - name: Inject GKI Configs (OverlayFS & KPM)
+      - name: Inject GKI Configs (OverlayFS)
         run: |
           # Target standard GKI defconfig path used in 6.6 trees
           GKI_DEFCONFIG="common/arch/arm64/configs/gki_defconfig"
@@ -37,7 +37,6 @@ jobs:
             python3 common/scripts/config --file "$GKI_DEFCONFIG" --enable CONFIG_TMPFS_POSIX_ACL
             python3 common/scripts/config --file "$GKI_DEFCONFIG" --enable CONFIG_KALLSYMS
             python3 common/scripts/config --file "$GKI_DEFCONFIG" --enable CONFIG_KALLSYMS_ALL
-            python3 common/scripts/config --file "$GKI_DEFCONFIG" --enable CONFIG_KPM
           fi
           
           # Bypass strict AOSP ABI defconfig checks
